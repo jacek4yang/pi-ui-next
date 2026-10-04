@@ -1,0 +1,38 @@
+{
+  "now": 5000,
+  "turns": [
+    {
+      "source": "user",
+      "startedAt": 1000,
+      "endedAt": 4600,
+      "calls": [
+        {
+          "toolCallId": "code",
+          "toolName": "code",
+          "ts": 1000,
+          "endTs": 4300,
+          "isError": false,
+          "children": [
+            {
+              "toolCallId": "code/1",
+              "toolName": "bash",
+              "args": { "command": "npm test" },
+              "ts": 1100,
+              "endTs": 3200,
+              "isError": true
+            }
+          ]
+        },
+        {
+          "toolCallId": "fix",
+          "toolName": "edit",
+          "args": { "path": "src/math.ts" },
+          "ts": 4400,
+          "endTs": 4500,
+          "isError": false,
+          "summary": "src/math.ts  +3 -1"
+        }
+      ]
+    }
+  ]
+}

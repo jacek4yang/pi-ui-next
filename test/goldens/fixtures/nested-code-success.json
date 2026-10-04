@@ -1,0 +1,64 @@
+{
+  "now": 20000,
+  "turns": [
+    {
+      "source": "user",
+      "startedAt": 1000,
+      "endedAt": 18400,
+      "calls": [
+        {
+          "toolCallId": "search",
+          "toolName": "grep",
+          "args": { "pattern": "session_compact" },
+          "ts": 1000,
+          "endTs": 1100,
+          "isError": false,
+          "summary": "12 matches"
+        },
+        {
+          "toolCallId": "read",
+          "toolName": "read",
+          "args": { "path": "src/context.ts" },
+          "ts": 1200,
+          "endTs": 1260,
+          "isError": false,
+          "summary": "src/context.ts"
+        },
+        {
+          "toolCallId": "code",
+          "toolName": "code",
+          "ts": 1300,
+          "endTs": 8600,
+          "isError": false,
+          "children": [
+            {
+              "toolCallId": "code/1",
+              "toolName": "read",
+              "args": { "path": "src/context.ts" },
+              "ts": 1310,
+              "endTs": 1320,
+              "isError": false
+            },
+            {
+              "toolCallId": "code/2",
+              "toolName": "bash",
+              "args": { "command": "npm test" },
+              "ts": 1330,
+              "endTs": 8500,
+              "isError": false
+            }
+          ]
+        },
+        {
+          "toolCallId": "edit",
+          "toolName": "edit",
+          "args": { "path": "src/context.ts" },
+          "ts": 8700,
+          "endTs": 8900,
+          "isError": false,
+          "summary": "src/context.ts  +21 -8"
+        }
+      ]
+    }
+  ]
+}

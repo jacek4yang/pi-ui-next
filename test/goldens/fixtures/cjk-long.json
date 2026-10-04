@@ -1,0 +1,31 @@
+{
+  "now": 3000,
+  "turns": [
+    {
+      "source": "user",
+      "startedAt": 1000,
+      "endedAt": 2900,
+      "calls": [
+        {
+          "toolCallId": "r1",
+          "toolName": "read",
+          "args": { "path": "src/配置/上下文管理器实现.ts" },
+          "ts": 1000,
+          "endTs": 1100,
+          "isError": false,
+          "summary": "src/配置/上下文管理器实现.ts"
+        },
+        {
+          "toolCallId": "b1",
+          "toolName": "bash",
+          "args": {
+            "command": "npm test -- --filter=上下文管理器测试套件 --reporter=verbose --coverage.include=src/配置/**/*.ts"
+          },
+          "ts": 1200,
+          "endTs": 2800,
+          "isError": false
+        }
+      ]
+    }
+  ]
+}

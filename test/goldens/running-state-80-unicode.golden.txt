@@ -1,0 +1,4 @@
+● Working · 17.4s
+
+├─ ✓ read     src/main.ts
+└─ ● bash     npm run build

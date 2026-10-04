@@ -1,0 +1,27 @@
+{
+  "now": 18400,
+  "turns": [
+    {
+      "source": "user",
+      "startedAt": 1000,
+      "calls": [
+        {
+          "toolCallId": "read",
+          "toolName": "read",
+          "args": { "path": "src/main.ts" },
+          "ts": 1000,
+          "endTs": 1100,
+          "isError": false,
+          "summary": "src/main.ts"
+        },
+        {
+          "toolCallId": "build",
+          "toolName": "bash",
+          "args": { "command": "npm run build" },
+          "ts": 1200,
+          "preview": "vite v7 building for production...\ntransforming modules..."
+        }
+      ]
+    }
+  ]
+}

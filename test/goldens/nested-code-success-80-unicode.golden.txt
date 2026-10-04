@@ -1,0 +1,6 @@
+✓ Done · 17.4s
+
+├─ ✓ grep     12 matches
+├─ ✓ read     src/context.ts
+├─ ✓ code     2 calls · 7.3s
+└─ ✓ edit     src/context.ts  +21 -8

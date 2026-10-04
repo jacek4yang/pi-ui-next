@@ -1,0 +1,4 @@
+✓ Done · 3.6s
+
+├─ ⚠ code     1 call · 3.3s · 1 failed
+└─ ✓ edit     src/math.ts  +3 -1

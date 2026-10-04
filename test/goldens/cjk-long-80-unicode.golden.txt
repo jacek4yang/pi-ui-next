@@ -1,0 +1,4 @@
+✓ Done · 1.9s
+
+├─ ✓ read     src/配置/上下文管理器实现.ts
+└─ ✓ bash     npm test -- --filter=上下文管理器测试套件 --reporter=verb…
