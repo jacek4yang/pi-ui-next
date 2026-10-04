@@ -2,6 +2,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { STACK_INFO } from "./info.ts";
 import { ActivityTimeline } from "./timeline/timeline.ts";
 import { project } from "./timeline/project.ts";
+import { summarizeToolResult } from "./render/result-summary.ts";
+import { createToolRendererResolver } from "./render/tool-renderer.ts";
 
 /**
  * pi-ui-next — experimental human-facing TUI enhancement layer.
@@ -42,8 +44,18 @@ export default function piUiNext(pi: ExtensionAPI) {
   });
 
   pi.on("tool_execution_end", (event) => {
-    timeline.endCall(event.toolCallId, { isError: event.isError });
+    timeline.endCall(event.toolCallId, {
+      isError: event.isError,
+      summary: summarizeToolResult(
+        event.toolName,
+        event.result as Parameters<typeof summarizeToolResult>[1],
+      ),
+    });
   });
+
+  // Fill in rendering only where nothing else does; never clobber existing
+  // renderers (see createToolRendererResolver policy).
+  pi.registerToolRenderer(createToolRendererResolver());
 
   pi.registerCommand("ui-next", {
     description: "Show pi-ui-next activity overview",
