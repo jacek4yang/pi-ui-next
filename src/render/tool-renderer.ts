@@ -368,7 +368,9 @@ function formatOutcomeSummary(
       : undefined;
 
   const rawText = firstText(result);
-  const textLines = nonEmptyLines(rawText);
+  const textLines = stripLeadingEnvBanners(
+    nonEmptyLines(rawText).filter((l) => !isExitTrailerLine(l)),
+  );
 
   if (isError) {
     const firstErr = textLines[0];
@@ -509,6 +511,37 @@ function isExitTrailerLine(line: string): boolean {
   );
 }
 
+export function isEnvBannerLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (/^Python(?:\s+版本[:：]|\s*\d+\.\d+)/i.test(trimmed)) return true;
+  if (/^(?:Platform|操作系统|系统)[:：]/i.test(trimmed)) return true;
+  if (/^(?:解释器路径|Python\s*路径|Executable|Interpreter)[:：]/i.test(trimmed)) return true;
+  if (/^(?:工作目录|Working\s*(?:directory|dir))[:：]/i.test(trimmed)) return true;
+  if (/^Node(?:\.js)?\s+v\d+\.\d+/i.test(trimmed)) return true;
+  return false;
+}
+
+export function stripLeadingEnvBanners(lines: string[]): string[] {
+  let bannerCount = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (isEnvBannerLine(line)) {
+      bannerCount++;
+    } else if (bannerCount > 0 && /^[-=_~]{3,}$/.test(line.trim())) {
+      bannerCount++;
+      break;
+    } else {
+      break;
+    }
+  }
+
+  // Only strip if there are remaining non-banner lines (keeps pure version checks intact)
+  if (bannerCount > 0 && bannerCount < lines.length) {
+    return lines.slice(bannerCount);
+  }
+  return lines;
+}
+
 function tryFormatJson(text: string, theme: Theme): string[] | undefined {
   const trimmed = text.trim();
   if (!(
@@ -526,7 +559,7 @@ function tryFormatJson(text: string, theme: Theme): string[] | undefined {
   }
 }
 
-/** Extract preview lines up to limit, stripping duplicate runtime exit trailers. */
+/** Extract preview lines up to limit, stripping duplicate runtime exit trailers and leading environment banners. */
 function extractPreviewLines(
   _toolName: string,
   result: ToolResultLike | undefined,
@@ -545,7 +578,8 @@ function extractPreviewLines(
   }
 
   const rawLines = nonEmptyLines(text);
-  const lines = rawLines.filter((l) => !isExitTrailerLine(l));
+  const withoutTrailers = rawLines.filter((l) => !isExitTrailerLine(l));
+  const lines = stripLeadingEnvBanners(withoutTrailers);
   return lines.slice(0, maxLines);
 }
 

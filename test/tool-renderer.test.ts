@@ -13,9 +13,11 @@ import {
   EXPANDED_PREVIEW_LINES,
   INLINE_PREVIEW_LINES,
   isCodeExecutionTool,
+  isEnvBannerLine,
   renderCallBlock,
   renderCallLine,
   renderResultLines,
+  stripLeadingEnvBanners,
   type ToolRenderContextLike,
 } from "../src/render/tool-renderer.ts";
 import type { PinxExecDetails } from "../src/render/result-summary.ts";
@@ -504,4 +506,81 @@ test("createToolRendererResolver intercepts python tool calls and results even w
   assert.ok(resultText.includes("✓"), resultText);
   assert.ok(resultText.includes("Hello from Python!"), resultText);
   assert.ok(resultText.includes("— python"), resultText);
+});
+
+test("isEnvBannerLine recognizes Python/Node/OS environment headers", () => {
+  assert.equal(
+    isEnvBannerLine(
+      "Python 3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+    ),
+    true,
+  );
+  assert.equal(isEnvBannerLine("Python 版本: 3.14.7"), true);
+  assert.equal(isEnvBannerLine("Platform: Windows-11-10.0.26200-SP0"), true);
+  assert.equal(isEnvBannerLine("操作系统: Windows 11 AMD64"), true);
+  assert.equal(isEnvBannerLine("解释器路径: D:\\python.exe"), true);
+  assert.equal(isEnvBannerLine("工作目录: C:\\Users\\20220"), true);
+  assert.equal(isEnvBannerLine("Node.js v22.19.0"), true);
+  assert.equal(isEnvBannerLine("Hello from Python! 你好！"), false);
+  assert.equal(isEnvBannerLine("5050"), false);
+});
+
+test("stripLeadingEnvBanners strips boilerplate banners when real output follows (pure result)", () => {
+  const lines = [
+    "Python 3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+    "Platform: Windows-11-10.0.26200-SP0",
+    "Hello from Python! 你好！",
+    "5050",
+  ];
+  const cleaned = stripLeadingEnvBanners(lines);
+  assert.deepEqual(cleaned, ["Hello from Python! 你好！", "5050"]);
+});
+
+test("stripLeadingEnvBanners strips multi-line Chinese environment block and separator", () => {
+  const lines = [
+    "Python 版本: 3.14.7",
+    "解释器路径: D:\\python.exe",
+    "操作系统: Windows 11 AMD64",
+    "工作目录: C:\\Users\\20220",
+    "------------------------------",
+    "1-10 的平方: [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]",
+    "平方和: 385",
+  ];
+  const cleaned = stripLeadingEnvBanners(lines);
+  assert.deepEqual(cleaned, ["1-10 的平方: [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]", "平方和: 385"]);
+});
+
+test("stripLeadingEnvBanners preserves banner when it is the ONLY output (e.g. version check)", () => {
+  const lines = ["Python 3.14.7"];
+  const cleaned = stripLeadingEnvBanners(lines);
+  assert.deepEqual(cleaned, ["Python 3.14.7"]);
+});
+
+test("renderResultLines strips leading environment banner from preview and outcome summary", () => {
+  const theme = createMockTheme();
+  const rawOutput = [
+    "Python 3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+    "Platform: Windows-11-10.0.26200-SP0",
+    "Hello from Python! 你好！",
+    "5050",
+    "[python exited with code 0 in 0.1s]",
+  ].join("\n");
+
+  const lines = renderResultLines(
+    "python",
+    textResult(rawOutput),
+    { expanded: false, isPartial: false },
+    theme,
+  );
+
+  // Header should summarize with real output, not environment banner
+  assert.ok(lines[0]!.includes("Hello from Python!"), lines[0]);
+  assert.ok(!lines[0]!.includes("Platform:"), lines[0]);
+
+  // Preview should contain pure execution result
+  const previewText = lines.slice(1).join("\n");
+  assert.ok(previewText.includes("Hello from Python! 你好！"), previewText);
+  assert.ok(previewText.includes("5050"), previewText);
+  assert.ok(!previewText.includes("Platform: Windows"), previewText);
+  assert.ok(!previewText.includes("Python 3.14.7"), previewText);
 });
