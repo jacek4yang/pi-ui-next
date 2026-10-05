@@ -45,6 +45,7 @@ for (const c of CASES) {
     }
     // Normalize EOLs: golden bytes must not depend on the OS that checked
     // them out (the semantic content is the line set, not line endings).
+    const expected = readFileSync(path, "utf8");
     const normalize = (s: string): string => s.split("\r\n").join("\n");
     assert.equal(normalize(actual), normalize(expected));
   });
