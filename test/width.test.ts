@@ -2,12 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { charWidth, padEndToWidth, truncateToWidth, visibleWidth } from "../src/render/width.ts";
 
-test("ascii text measures as length", () => {
+test("[U5] ascii text measures as length", () => {
   assert.equal(visibleWidth("hello"), 5);
   assert.equal(visibleWidth(""), 0);
 });
 
-test("CJK characters count as two columns", () => {
+test("[U4] CJK characters count as two columns", () => {
   assert.equal(visibleWidth("上下文"), 6);
   assert.equal(visibleWidth("src/上下文.ts"), 13); // 4 + 6 + 3
 });
@@ -22,7 +22,7 @@ test("ANSI escapes are ignored", () => {
   assert.equal(visibleWidth("\x1b[1;32mgreen\x1b[0m"), 5);
 });
 
-test("truncateToWidth keeps wide characters whole", () => {
+test("[U4] truncateToWidth keeps wide characters whole", () => {
   // "上下文" is 6 columns; cutting at 5 must drop the last char, not half of it
   assert.equal(truncateToWidth("上下文", 5), "上下");
   assert.equal(truncateToWidth("上下文", 6), "上下文");

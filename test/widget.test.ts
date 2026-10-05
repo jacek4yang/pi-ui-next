@@ -52,7 +52,7 @@ test("Line 1 renders running status, duration, call count and warnings for failu
   assert.ok(line1.includes("token:warning") && line1.includes("1 failed"), line1);
 });
 
-test("Line 2 renders context pressure bar and truthful token figures", () => {
+test("[U4] Line 2 renders context pressure bar and truthful token figures", () => {
   const t = new ActivityTimeline();
   t.beginTurn("user", 1000);
   t.endTurn(2000);
@@ -94,7 +94,7 @@ test("Line 3 renders latest activity with accent token", () => {
   assert.ok(line3.includes(activity), line3);
 });
 
-test("widget lines are safely bounded to terminal width (U4 CJK safe)", () => {
+test("[U4] widget lines are safely bounded to terminal width (U4 CJK safe)", () => {
   const t = new ActivityTimeline();
   t.beginTurn("user", 1000);
   t.startCall({

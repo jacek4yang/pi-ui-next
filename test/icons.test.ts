@@ -7,7 +7,7 @@ import { visibleWidth } from "../src/render/width.ts";
 
 const MODES: IconMode[] = ["unicode", "ascii", "nerd"];
 
-test("all icon sets define non-empty strings for all semantic roles", () => {
+test("[U3] all icon sets define non-empty strings for all semantic roles", () => {
   const requiredKeys: Array<keyof IconSet> = [
     "running",
     "success",
@@ -30,7 +30,7 @@ test("all icon sets define non-empty strings for all semantic roles", () => {
   }
 });
 
-test("nerd icon mode renders harmonized Nerd Font icons in projection (U3, U5)", () => {
+test("[U3] nerd icon mode renders harmonized Nerd Font icons in projection (U3, U5)", () => {
   const t = new ActivityTimeline();
   t.beginTurn("user", 1000);
   t.startCall({ toolCallId: "c1", toolName: "read", args: { path: "src/index.ts" }, ts: 1000 });
@@ -59,7 +59,7 @@ test("nerd icon mode renders harmonized Nerd Font icons in projection (U3, U5)",
   }
 });
 
-test("nerd icon mode renders running icon for active turn", () => {
+test("[U3] nerd icon mode renders running icon for active turn", () => {
   const t = new ActivityTimeline();
   t.beginTurn("user", 1000);
   t.startCall({ toolCallId: "c1", toolName: "bash", args: { command: "sleep 10" }, ts: 1000 });

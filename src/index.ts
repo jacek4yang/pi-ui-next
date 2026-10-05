@@ -8,6 +8,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { ActivityTimeline } from "./timeline/timeline.ts";
 import { summarizeToolResult } from "./render/result-summary.ts";
 import { createToolRendererResolver } from "./render/tool-renderer.ts";
+import { formatContextLine } from "./render/context-line.ts";
 import { buildWidgetLines, type LatestContextStatus } from "./render/widget.ts";
 import { renderOverviewCard } from "./render/overview.ts";
 

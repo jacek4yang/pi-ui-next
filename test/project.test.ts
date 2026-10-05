@@ -34,7 +34,7 @@ function buildNested(): ActivityTimeline {
   return t;
 }
 
-test("collapsed projection renders Level 0", () => {
+test("[U1] collapsed projection renders Level 0", () => {
   const t = buildNested();
   const lines = project(t, { width: 120, icons: "unicode", now: 18400 });
   assert.equal(lines[0], "✓ Done · 17.4s");
@@ -47,7 +47,7 @@ test("collapsed projection renders Level 0", () => {
   ]);
 });
 
-test("expanded projection renders Level 1 for the expanded node", () => {
+test("[U1] expanded projection renders Level 1 for the expanded node", () => {
   const t = buildNested();
   const lines = project(t, {
     width: 120,
@@ -65,7 +65,7 @@ test("expanded projection renders Level 1 for the expanded node", () => {
   ]);
 });
 
-test("a nested failure is visible at Level 0 through the parent row (U2)", () => {
+test("[U1][U2] a nested failure is visible at Level 0 through the parent row (U2)", () => {
   const t = new ActivityTimeline();
   t.beginTurn("user", 1000);
   t.startCall({ toolCallId: "code", toolName: "code", ts: 1000 });
@@ -108,7 +108,7 @@ test("a running call without a title falls back to an ellipsis", () => {
   assert.equal(lines[2], "└─ ● webfetch …");
 });
 
-test("ascii mode keeps the same layout with different icons", () => {
+test("[U5] ascii mode keeps the same layout with different icons", () => {
   const t = buildNested();
   const lines = project(t, { width: 120, icons: "ascii", now: 18400 });
   assert.equal(lines[0], "+ Done · 17.4s");
@@ -116,7 +116,7 @@ test("ascii mode keeps the same layout with different icons", () => {
   assert.equal(lines[5], "\\ + edit     src/context.ts  +21 -8");
 });
 
-test("lines never exceed the requested width with CJK paths", () => {
+test("[U4] lines never exceed the requested width with CJK paths", () => {
   const t = new ActivityTimeline();
   t.beginTurn("user", 1000);
   t.startCall({

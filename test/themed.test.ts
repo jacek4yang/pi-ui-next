@@ -110,7 +110,7 @@ test("renderProgressBar renders 10 blocks with 50%/80% threshold tiers", () => {
   assert.ok(barOver.includes("100%"));
 });
 
-test("truncateMiddlePath keeps endpoints and bounds visible width", () => {
+test("[U4] truncateMiddlePath keeps endpoints and bounds visible width", () => {
   const short = "src/index.ts";
   assert.equal(truncateMiddlePath(short, 20), short);
 

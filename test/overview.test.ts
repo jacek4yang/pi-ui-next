@@ -79,7 +79,7 @@ test("renderOverviewCard displays evidence references when present", () => {
   assert.ok(joined.includes("reclaimable ~12.0k tokens"), joined);
 });
 
-test("renderOverviewCard aligns CJK content safely to width", () => {
+test("[U4] renderOverviewCard aligns CJK content safely to width", () => {
   const t = new ActivityTimeline();
   t.beginTurn("user", 1000);
   t.startCall({
