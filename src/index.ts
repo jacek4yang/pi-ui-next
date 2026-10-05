@@ -3,11 +3,13 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { STACK_INFO } from "./info.ts";
 import { ActivityTimeline } from "./timeline/timeline.ts";
 import { project } from "./timeline/project.ts";
 import { summarizeToolResult } from "./render/result-summary.ts";
 import { createToolRendererResolver } from "./render/tool-renderer.ts";
+import { buildWidgetLines, type LatestContextStatus } from "./render/widget.ts";
 
 /**
  * pi-ui-next — experimental human-facing TUI enhancement layer.
@@ -17,19 +19,11 @@ import { createToolRendererResolver } from "./render/tool-renderer.ts";
  * pinx.context.status contract), and the /ui-next overview command.
  */
 
-interface LatestContextStatus {
-  used: { value: number; source: string } | undefined;
-  window: number | undefined;
-  engine: string | undefined;
-  archivedRefs: number | undefined;
-  eligibleTokens: number | undefined;
-}
-
 export default function piUiNext(pi: ExtensionAPI) {
   const timeline = new ActivityTimeline();
   let latestContext: LatestContextStatus | undefined;
   let latestActivity: string | undefined;
-  let lastWidgetLines: string[] = [];
+  let lastWidgetKey = "";
 
   // Contract events from producers (context-manager, recovery, exec). Absence
   // of producers degrades gracefully: the widget shows timeline data only.
@@ -117,6 +111,7 @@ export default function piUiNext(pi: ExtensionAPI) {
     description: "Show pi-ui-next activity overview; `off` hides the live widget",
     handler: async (args, ctx) => {
       if (args.trim() === "off") {
+        lastWidgetKey = "";
         ctx.ui.setWidget("pinx-ui", undefined);
         await ctx.ui.notify("pi-ui-next widget hidden (timeline keeps running)", "info");
         return;
@@ -131,49 +126,39 @@ export default function piUiNext(pi: ExtensionAPI) {
 
   function renderWidget(ctx: ExtensionContext | ExtensionCommandContext): void {
     if (ctx.mode !== "tui") return;
-    const lines = widgetLines();
-    if (lines.length === 0) return;
-    if (lines.join("\n") === lastWidgetLines.join("\n")) return; // skip no-op repaints
-    lastWidgetLines = lines;
-    ctx.ui.setWidget("pinx-ui", lines, { placement: "aboveEditor" });
-  }
-
-  function widgetLines(): string[] {
     const turn = timeline.latestTurn();
-    if (!turn) return [];
-    const now = Date.now();
-    const header =
-      project(timeline, { width: 120, icons: "unicode", now, maxLines: 1 })[0] ?? "idle";
-    const rootCount = turn.calls.length;
-    const failed = timeline.failures().length;
-    const line1 = `${header} · ${rootCount} ${rootCount === 1 ? "call" : "calls"}${failed > 0 ? ` · ${failed} failed` : ""}`;
-    const lines = [line1];
-    if (latestContext) {
-      const used = latestContext.used;
-      const window = latestContext.window;
-      const parts: string[] = [];
-      if (used && window) {
-        parts.push(
-          `ctx ${Math.min(100, Math.round((used.value / window) * 100))}% · ${formatK(used.value)}/${formatK(window)} (${used.source})`,
-        );
-      } else if (used) {
-        parts.push(`ctx ~${formatK(used.value)} tokens (${used.source})`);
+    if (!turn) {
+      if (lastWidgetKey !== "") {
+        lastWidgetKey = "";
+        ctx.ui.setWidget("pinx-ui", undefined);
       }
-      if (latestContext.eligibleTokens !== undefined) {
-        parts.push(`reclaimable ~${formatK(latestContext.eligibleTokens)}`);
-      }
-      if (latestContext.archivedRefs !== undefined && latestContext.archivedRefs > 0) {
-        parts.push(`${latestContext.archivedRefs} evidence refs`);
-      }
-      if (latestContext.engine) parts.push(`engine ${latestContext.engine}`);
-      if (parts.length > 0) lines.push(parts.join(" · "));
+      return;
     }
-    if (latestActivity) lines.push(latestActivity);
-    return lines;
+    const stateKey = widgetStateKey();
+    if (stateKey === lastWidgetKey) return; // skip no-op repaints
+    lastWidgetKey = stateKey;
+
+    ctx.ui.setWidget(
+      "pinx-ui",
+      (tui, theme) => {
+        const width = (tui as { terminal?: { width?: number } })?.terminal?.width || 100;
+        const lines = buildWidgetLines(timeline, latestContext, latestActivity, theme, width);
+        return new Text(lines.join("\n"), 0, 0);
+      },
+      { placement: "aboveEditor" },
+    );
   }
 
-  function formatK(n: number): string {
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-    return String(n);
+  function widgetStateKey(): string {
+    const turn = timeline.latestTurn();
+    if (!turn) return "";
+    return JSON.stringify({
+      turnIndex: turn.index,
+      running: turn.endedAt === undefined,
+      calls: turn.calls.length,
+      failures: timeline.failures().length,
+      ctx: latestContext,
+      act: latestActivity,
+    });
   }
 }
