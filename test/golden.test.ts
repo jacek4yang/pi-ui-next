@@ -43,8 +43,13 @@ for (const c of CASES) {
       writeFileSync(path, actual);
       return;
     }
-    const expected = readFileSync(path, "utf8");
-    assert.equal(actual, expected);
+    // Normalize EOLs: golden bytes must not depend on the OS that checked
+    // them out (the semantic content is the line set, not line endings).
+    assert.equal(actual.replace(/
+/g, "
+"), expected.replace(/
+/g, "
+"));
   });
 }
 
