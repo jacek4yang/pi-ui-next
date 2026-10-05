@@ -2,14 +2,14 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { STACK_INFO } from "./info.ts";
 import { ActivityTimeline } from "./timeline/timeline.ts";
-import { project } from "./timeline/project.ts";
 import { summarizeToolResult } from "./render/result-summary.ts";
 import { createToolRendererResolver } from "./render/tool-renderer.ts";
 import { buildWidgetLines, type LatestContextStatus } from "./render/widget.ts";
+import { renderOverviewCard } from "./render/overview.ts";
 
 /**
  * pi-ui-next — experimental human-facing TUI enhancement layer.
@@ -117,10 +117,9 @@ export default function piUiNext(pi: ExtensionAPI) {
         return;
       }
       renderWidget(ctx);
-      const lines = project(timeline, { width: 100, icons: "unicode" });
-      const failed = timeline.failures().length;
-      const head = `pi-ui-next ${STACK_INFO.contractVersion} · ${timeline.turnsList().length} turns · ${failed} failed calls`;
-      await ctx.ui.notify(head + (lines.length > 0 ? `\n${lines.join("\n")}` : ""), "info");
+      const theme = (ctx.ui as { theme?: Theme }).theme ?? defaultFallbackTheme();
+      const cardLines = renderOverviewCard(timeline, latestContext, theme, 80);
+      await ctx.ui.notify(cardLines.join("\n"), "info");
     },
   });
 
@@ -161,4 +160,12 @@ export default function piUiNext(pi: ExtensionAPI) {
       act: latestActivity,
     });
   }
+}
+
+function defaultFallbackTheme(): Theme {
+  return {
+    fg: (_c: string, text: string) => text,
+    bg: (_c: string, text: string) => text,
+    style: (text: string) => text,
+  } as unknown as Theme;
 }
