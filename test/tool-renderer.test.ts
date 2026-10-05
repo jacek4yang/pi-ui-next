@@ -1,11 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Text } from "@earendil-works/pi-tui";
-import type { Theme, ThemeColor, ThemeBg } from "@earendil-works/pi-coding-agent";
+import type {
+  Theme,
+  ThemeColor,
+  ThemeBg,
+  AgentToolResult,
+  ToolRenderers,
+} from "@earendil-works/pi-coding-agent";
 import {
+  CALL_PREVIEW_LINES,
   createToolRendererResolver,
   EXPANDED_PREVIEW_LINES,
   INLINE_PREVIEW_LINES,
+  isCodeExecutionTool,
+  renderCallBlock,
   renderCallLine,
   renderResultLines,
   type ToolRenderContextLike,
@@ -25,8 +34,15 @@ function createMockTheme(): Theme {
   } as unknown as Theme;
 }
 
-function textResult(text: string, extra: Partial<{ details: unknown; isError: boolean }> = {}) {
-  return { content: [{ type: "text", text }], ...extra };
+function textResult(
+  text: string,
+  extra: Partial<{ details: unknown; isError: boolean }> = {},
+): AgentToolResult<unknown> {
+  return {
+    content: [{ type: "text" as const, text }],
+    details: extra.details,
+    isError: extra.isError,
+  };
 }
 
 test("renderCallLine formats tool name with toolTitle and args with muted", () => {
@@ -307,4 +323,180 @@ test("createToolRendererResolver yields to inherited but intercepts pinx.exec", 
   );
   assert.equal(inheritedResultInvoked, false, "should not call inherited for pinx.exec");
   assert.ok(comp, "should return custom Component");
+});
+
+test("isCodeExecutionTool identifies code/shell tools and args with source/command", () => {
+  assert.ok(isCodeExecutionTool("python"));
+  assert.ok(isCodeExecutionTool("node"));
+  assert.ok(isCodeExecutionTool("bash"));
+  assert.ok(isCodeExecutionTool("powershell"));
+  assert.ok(isCodeExecutionTool("code_buffer"));
+  assert.ok(isCodeExecutionTool("custom", { source: "print(1)" }));
+  assert.ok(isCodeExecutionTool("custom", { command: "ls" }));
+  assert.ok(isCodeExecutionTool("custom", { code: "1 + 1" }));
+  assert.ok(!isCodeExecutionTool("read", { path: "foo.ts" }));
+  assert.ok(!isCodeExecutionTool("grep", { pattern: "bar" }));
+});
+
+test("renderCallBlock formats python call without raw JSON escaping", () => {
+  const theme = createMockTheme();
+  const args = {
+    source: 'print("Hello from Python!")\nimport sys\nprint(sys.version)',
+  };
+  const lines = renderCallBlock("python", args, theme);
+
+  // Line 0: python tool title
+  assert.ok(lines[0]!.includes("token:toolTitle") && lines[0]!.includes("python"), lines[0]);
+  // Indented code lines
+  assert.ok(lines[1]!.includes('print("Hello from Python!")'), lines[1]);
+  assert.ok(lines[2]!.includes("import sys"), lines[2]);
+  assert.ok(lines[3]!.includes("print(sys.version)"), lines[3]);
+
+  // Must NOT contain raw JSON escaping like source="..." or \n
+  for (const line of lines) {
+    assert.ok(!line.includes('source="'), `leaked source=: ${line}`);
+    assert.ok(!line.includes("\\n"), `leaked literal \\n: ${line}`);
+  }
+});
+
+test("renderCallBlock formats single-line and multi-line bash calls", () => {
+  const theme = createMockTheme();
+
+  // Single-line bash
+  const single = renderCallBlock("bash", { command: "npm test" }, theme);
+  assert.equal(single.length, 1);
+  assert.ok(single[0]!.includes("$") && single[0]!.includes("npm test"), single[0]);
+
+  // Multi-line bash
+  const multi = renderCallBlock("bash", { command: "echo step 1\necho step 2" }, theme);
+  assert.ok(multi[0]!.includes("bash"), multi[0]);
+  assert.ok(multi[1]!.includes("echo step 1"), multi[1]);
+  assert.ok(multi[2]!.includes("echo step 2"), multi[2]);
+});
+
+test("renderCallBlock bounds long multi-line code calls in collapsed mode", () => {
+  const theme = createMockTheme();
+  const source = Array.from({ length: 14 }, (_, i) => `line_${i + 1} = ${i + 1}`).join("\n");
+
+  const collapsed = renderCallBlock("python", { source }, theme, { expanded: false });
+  // 1 header + 8 code lines + 1 continuation hint = 10 lines
+  assert.equal(collapsed.length, 1 + CALL_PREVIEW_LINES + 1);
+  assert.ok(
+    collapsed[collapsed.length - 1]!.includes("more lines"),
+    collapsed[collapsed.length - 1],
+  );
+
+  const expanded = renderCallBlock("python", { source }, theme, { expanded: true });
+  assert.equal(expanded.length, 1 + 14);
+});
+
+test("renderResultLines strips embedded runtime exit trailer preventing duplicate footers", () => {
+  const theme = createMockTheme();
+  const rawOutput =
+    "Hello from Python!\n3.12.3 (main, Apr 10 2024)\n[python exited with code 0 in 0.1s]";
+  const details: PinxExecDetails = {
+    v: 1,
+    shape: "pinx.exec",
+    runtime: "python",
+    durationMs: 110,
+  };
+
+  const lines = renderResultLines(
+    "python",
+    textResult(rawOutput, { details }),
+    { expanded: false, isPartial: false },
+    theme,
+  );
+
+  // Header has python status
+  assert.ok(lines[0]!.includes("token:success") && lines[0]!.includes("python"), lines[0]);
+
+  // Preview lines have the stdout
+  assert.ok(lines[1]!.includes("Hello from Python!"), lines[1]);
+  assert.ok(lines[2]!.includes("3.12.3"), lines[2]);
+
+  // Trailer "[python exited with code 0 in 0.1s]" must NOT appear in preview lines!
+  for (let i = 1; i < lines.length - 1; i++) {
+    assert.ok(
+      !lines[i]!.includes("[python exited"),
+      `duplicate exit trailer in line ${i}: ${lines[i]}`,
+    );
+  }
+
+  // Footer has single clean footer badge
+  const footer = lines[lines.length - 1]!;
+  assert.ok(footer.includes("— python · 110ms · exit 0"), footer);
+});
+
+test("renderResultLines formats python traceback with styled frames and error name", () => {
+  const theme = createMockTheme();
+  const tb = [
+    "Traceback (most recent call last):",
+    '  File "app.py", line 10, in main',
+    "ZeroDivisionError: division by zero",
+  ].join("\n");
+
+  const lines = renderResultLines(
+    "python",
+    textResult(tb, { isError: true }),
+    { expanded: false, isPartial: false },
+    theme,
+  );
+
+  assert.ok(lines[0]!.includes("token:error"), lines[0]);
+  // Traceback header in warning
+  assert.ok(lines[1]!.includes("token:warning") && lines[1]!.includes("Traceback"), lines[1]);
+  // File frame with accented path and warning line number
+  assert.ok(lines[2]!.includes("token:accent") && lines[2]!.includes("app.py"), lines[2]);
+  assert.ok(lines[2]!.includes("token:warning") && lines[2]!.includes("10"), lines[2]);
+  // Error name in bold error
+  assert.ok(
+    lines[3]!.includes("token:error") && lines[3]!.includes("ZeroDivisionError:"),
+    lines[3],
+  );
+});
+
+test("createToolRendererResolver intercepts python tool calls and results even when inherited has no renderCall", () => {
+  const theme = createMockTheme();
+  const resolver = createToolRendererResolver();
+
+  // Simulated inherited definition from pi-code-runtime-next (has parameters/execute but no renderCall)
+  const inheritedRuntimeTool: ToolRenderers = {};
+
+  const resolved = resolver("python", () => inheritedRuntimeTool);
+  assert.ok(resolved?.renderCall, "should provide renderCall for python");
+  assert.ok(resolved?.renderResult, "should provide renderResult for python");
+
+  type ContextParam = Parameters<NonNullable<typeof resolved.renderCall>>[2];
+  const dummyContext = {
+    args: { source: 'print("Hello from Python!")' },
+    toolCallId: "test_py",
+  } as unknown as ContextParam;
+
+  // Render call
+  const callComp = resolved.renderCall?.(
+    { source: 'print("Hello from Python!")' },
+    theme,
+    dummyContext,
+  );
+  assert.ok(callComp instanceof Text);
+  const callText = (callComp as Text).render(100).join("\n");
+  assert.ok(callText.includes("python"), callText);
+  assert.ok(callText.includes('print("Hello from Python!")'), callText);
+  assert.ok(!callText.includes('source="'), callText);
+
+  // Render result
+  const resultComp = resolved.renderResult?.(
+    textResult("Hello from Python!", {
+      details: { v: 1, shape: "pinx.exec", runtime: "python", durationMs: 50 },
+    }),
+    { expanded: false, isPartial: false },
+    theme,
+    dummyContext,
+  );
+  assert.ok(resultComp instanceof Text);
+  const resultText = (resultComp as Text).render(100).join("\n");
+  assert.ok(resultText.includes("✓"), resultText);
+  assert.ok(resultText.includes("Hello from Python!"), resultText);
+  assert.ok(resultText.includes("— python"), resultText);
 });

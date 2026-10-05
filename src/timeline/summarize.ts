@@ -35,6 +35,11 @@ export function summarizeCallTitle(toolName: string, args: unknown): string {
       const command = firstString(rec, ["command", "cmd"]);
       return command ? collapse(command) : "";
     }
+    case "code_buffer": {
+      const action = firstString(rec, ["action"]) ?? "run";
+      const name = firstString(rec, ["name"]);
+      return name ? `${action} ${name}` : action;
+    }
     case "grep":
     case "find":
       return firstString(rec, ["pattern", "query"]) ?? "";

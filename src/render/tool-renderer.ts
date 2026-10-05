@@ -11,16 +11,19 @@
 // theme styling (U3), CJK width safety (U4), and truthful telemetry (U6).
 
 import { Text } from "@earendil-works/pi-tui";
-import type {
-  AgentToolResult,
-  Theme,
-  ToolRendererResolver,
-  ToolRenderResultOptions,
+import {
+  highlightCode,
+  type AgentToolResult,
+  type Theme,
+  type ToolRendererResolver,
+  type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 
 export interface ToolRenderContextLike {
   args?: unknown;
   toolCallId?: string;
+  isPartial?: boolean;
+  expanded?: boolean;
 }
 import { summarizeCallTitle } from "../timeline/summarize.ts";
 import { isPinxExecDetails, type PinxExecDetails, type ToolResultLike } from "./result-summary.ts";
@@ -42,38 +45,196 @@ const DEFAULT_TERMINAL_WIDTH = 100;
 const MAX_ARG_PATH_WIDTH = 40;
 const MAX_ARG_CMD_WIDTH = 48;
 
+export const CALL_PREVIEW_LINES = 8;
+
+const CODE_EXEC_TOOL_NAMES = new Set([
+  "python",
+  "py",
+  "node",
+  "code",
+  "js",
+  "javascript",
+  "ts",
+  "typescript",
+  "bash",
+  "sh",
+  "shell",
+  "powershell",
+  "ps1",
+  "code_buffer",
+]);
+
+export function isCodeExecutionTool(toolName: string, args?: unknown): boolean {
+  if (CODE_EXEC_TOOL_NAMES.has(toolName)) return true;
+  if (typeof args === "object" && args !== null) {
+    const rec = args as Record<string, unknown>;
+    return (
+      typeof rec.source === "string" ||
+      typeof rec.command === "string" ||
+      typeof rec.cmd === "string" ||
+      typeof rec.code === "string" ||
+      typeof rec.patch === "string" ||
+      typeof rec.script === "string" ||
+      typeof rec.query === "string"
+    );
+  }
+  return false;
+}
+
+export function detectCodeLang(toolName: string, rec?: Record<string, unknown>): string {
+  if (toolName === "python" || toolName === "py") return "python";
+  if (toolName === "node" || toolName === "code" || toolName === "js" || toolName === "javascript")
+    return "javascript";
+  if (toolName === "ts" || toolName === "typescript") return "typescript";
+  if (toolName === "bash" || toolName === "sh" || toolName === "shell") return "bash";
+  if (toolName === "powershell" || toolName === "ps1") return "powershell";
+  if (toolName === "code_buffer" && rec?.patch) return "diff";
+  if (typeof rec?.runtime === "string") {
+    if (rec.runtime === "python" || rec.runtime === "py") return "python";
+    if (rec.runtime === "node" || rec.runtime === "code") return "javascript";
+    if (rec.runtime === "bash" || rec.runtime === "sh") return "bash";
+  }
+  if (typeof rec?.language === "string") return rec.language;
+  if (typeof rec?.lang === "string") return rec.lang;
+  return "plaintext";
+}
+
+export function safeHighlightCode(code: string, lang: string, theme: Theme): string[] {
+  try {
+    const lines = highlightCode(code, lang);
+    if (lines && lines.length > 0) return lines;
+  } catch {
+    // fallback
+  }
+  return code.split("\n").map((line) => theme.fg("toolOutput", line));
+}
+
+export function formatCodeCallLines(
+  toolName: string,
+  rec: Record<string, unknown> | undefined,
+  isPartial: boolean,
+  isExpanded: boolean,
+  theme: Theme,
+  width = DEFAULT_TERMINAL_WIDTH,
+): string[] {
+  const code = firstString(rec ?? {}, [
+    "source",
+    "command",
+    "cmd",
+    "code",
+    "patch",
+    "script",
+    "query",
+  ]);
+
+  if (!code) {
+    return [truncateToWidth(renderCallLine(toolName, rec, theme), width)];
+  }
+
+  const lang = detectCodeLang(toolName, rec);
+  const normalizedCode = code.replace(/\r\n/g, "\n").replace(/\t/g, "  ").trimEnd();
+  const rawLines = normalizedCode.split("\n");
+
+  const timeoutMs =
+    typeof rec?.timeoutMs === "number"
+      ? rec.timeoutMs
+      : typeof rec?.timeout === "number"
+        ? rec.timeout * 1000
+        : undefined;
+  const timeoutStr = timeoutMs
+    ? ` ${renderMuted(theme, `(timeout ${Math.round(timeoutMs / 1000)}s)`)}`
+    : "";
+  const partialStr = isPartial ? ` ${renderMuted(theme, "running…")}` : "";
+
+  // Single-line shell command ($ npm test)
+  if (
+    (toolName === "bash" || toolName === "powershell" || toolName === "sh") &&
+    rawLines.length === 1
+  ) {
+    const prompt = toolName === "powershell" ? theme.fg("muted", "PS>") : theme.fg("muted", "$");
+    const highlightedCmd = safeHighlightCode(normalizedCode, lang, theme)[0] ?? normalizedCode;
+    return [truncateToWidth(`${prompt} ${highlightedCmd}${timeoutStr}${partialStr}`, width)];
+  }
+
+  // Header line
+  let header = renderToolTitle(theme, toolName);
+  if (toolName === "code_buffer" && rec) {
+    const action = firstString(rec, ["action"]) ?? "run";
+    const name = firstString(rec, ["name"]);
+    header += ` ${renderMuted(theme, [action, name].filter(Boolean).join(" "))}`;
+  }
+  header += `${timeoutStr}${partialStr}`;
+
+  const lines: string[] = [truncateToWidth(header, width)];
+  const highlightedLines = safeHighlightCode(normalizedCode, lang, theme);
+  const maxLines = isExpanded ? highlightedLines.length : CALL_PREVIEW_LINES;
+  const displayLines = highlightedLines.slice(0, maxLines);
+
+  for (const hLine of displayLines) {
+    lines.push(truncateToWidth(`  ${hLine}`, width));
+  }
+
+  if (highlightedLines.length > maxLines) {
+    const remaining = highlightedLines.length - maxLines;
+    lines.push(
+      truncateToWidth(
+        `  ${renderMuted(theme, `... (${remaining} more lines, click to expand)`)}`,
+        width,
+      ),
+    );
+  }
+
+  return lines;
+}
+
+export function renderCallBlock(
+  toolName: string,
+  args: unknown,
+  theme: Theme,
+  context?: ToolRenderContextLike,
+  width = DEFAULT_TERMINAL_WIDTH,
+): string[] {
+  const rec =
+    typeof args === "object" && args !== null ? (args as Record<string, unknown>) : undefined;
+  const isPartial = Boolean((context as { isPartial?: boolean })?.isPartial ?? false);
+  const isExpanded = Boolean((context as { expanded?: boolean })?.expanded ?? false);
+
+  if (isCodeExecutionTool(toolName, args)) {
+    return formatCodeCallLines(toolName, rec, isPartial, isExpanded, theme, width);
+  }
+
+  return [truncateToWidth(renderCallLine(toolName, args, theme), width)];
+}
+
 export function createToolRendererResolver(): ToolRendererResolver {
   return (toolName, next) => {
     const inherited = next();
-    if (inherited) {
-      // Yield to registered/inherited renderer, but intercept results
-      // carrying pinx.exec details (CONTRACTS.md §5).
-      return {
-        ...inherited,
-        renderResult: (result, options, theme, context) => {
-          if (isPinxExecDetails(result?.details)) {
-            return new Text(
-              renderResultLines(toolName, result, options, theme, context).join("\n"),
-              0,
-              0,
-            );
-          }
-          if (inherited.renderResult) {
-            return inherited.renderResult(result, options, theme, context);
-          }
+
+    return {
+      ...(inherited ?? {}),
+      renderCall: (args, theme, context) => {
+        if (isCodeExecutionTool(toolName, args)) {
+          return new Text(renderCallBlock(toolName, args, theme, context).join("\n"), 0, 0);
+        }
+        if (inherited?.renderCall) {
+          return inherited.renderCall(args, theme, context);
+        }
+        return new Text(renderCallLine(toolName, args, theme), 0, 0);
+      },
+      renderResult: (result, options, theme, context) => {
+        if (
+          isPinxExecDetails(result?.details) ||
+          isCodeExecutionTool(toolName, context?.args) ||
+          !inherited?.renderResult
+        ) {
           return new Text(
             renderResultLines(toolName, result, options, theme, context).join("\n"),
             0,
             0,
           );
-        },
-      };
-    }
-
-    return {
-      renderCall: (args, theme, _context) => new Text(renderCallLine(toolName, args, theme), 0, 0),
-      renderResult: (result, options, theme, context) =>
-        new Text(renderResultLines(toolName, result, options, theme, context).join("\n"), 0, 0),
+        }
+        return inherited.renderResult(result, options, theme, context);
+      },
     };
   };
 }
@@ -135,7 +296,7 @@ export function renderResultLines(
 
   // 2. Preview Lines
   const maxPreview = options.expanded ? EXPANDED_PREVIEW_LINES : INLINE_PREVIEW_LINES;
-  const preview = extractPreviewLines(toolName, result, isError, maxPreview);
+  const preview = extractPreviewLines(toolName, result, isError, maxPreview, theme);
   for (const pLine of preview) {
     const formatted = formatPreviewLine(pLine, isError, theme);
     lines.push(truncateToWidth(`  ${formatted}`, width));
@@ -284,24 +445,99 @@ function formatDurationSimple(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+/** Format error or traceback lines with semantic tokens. */
+function formatErrorOrTracebackLine(line: string, theme: Theme): string {
+  // Python traceback header
+  if (/^\s*Traceback \(most recent call last\):/i.test(line)) {
+    return theme.fg("warning", line);
+  }
+  // Python traceback frame: File "...", line 12, in foo
+  const pyFrameMatch = line.match(/^(\s*File\s+")([^"]+)("\s*,\s*line\s+)(\d+)(.*)/);
+  if (pyFrameMatch) {
+    const [, pre = "", file = "", mid = "", lineNum = "", rest = ""] = pyFrameMatch;
+    return `${theme.fg("muted", pre)}${theme.fg("accent", file)}${theme.fg("muted", mid)}${theme.fg("warning", lineNum)}${theme.fg("muted", rest)}`;
+  }
+  // Node / JS stack frame: at Object.<anonymous> (/path/to/file.js:12:34)
+  if (/^\s*at\s+.*\(?.*:\d+:\d+\)?/i.test(line)) {
+    return theme.fg("muted", line);
+  }
+  // Python syntax error caret: ^ or ^^^
+  if (/^\s*\^+\s*$/.test(line)) {
+    return theme.fg("accent", theme.bold(line));
+  }
+  // Exception / Error name: e.g. ZeroDivisionError: division by zero, TypeError: ...
+  const errNameMatch = line.match(
+    /^([A-Za-z0-9_.]*(?:Error|Exception|Fatal|Fault|Failure)):\s*(.*)/,
+  );
+  if (errNameMatch) {
+    const [, errName = "", msg = ""] = errNameMatch;
+    return `${theme.bold(theme.fg("error", `${errName}:`))} ${theme.fg("error", msg)}`;
+  }
+  // Compiler error: e.g. src/foo.ts:12:5 - error TS2304: ...
+  const compilerMatch = line.match(/^([^:]+:\d+:\d+)(.*)/);
+  if (compilerMatch) {
+    const [, loc = "", rest = ""] = compilerMatch;
+    return `${theme.fg("accent", loc)}${theme.fg("error", rest)}`;
+  }
+  return theme.fg("error", line);
+}
+
 /** Format single preview line: error in error color, diff in added/removed/context, normal in toolOutput. */
 function formatPreviewLine(line: string, isError: boolean, theme: Theme): string {
   if (isError) {
-    return theme.fg("error", line);
+    return formatErrorOrTracebackLine(line, theme);
+  }
+  if (line.includes("\x1b[") || line.includes("\x1b]")) {
+    return line;
   }
   return renderDiffLine(theme, line);
 }
 
-/** Extract preview lines up to limit (minimum 4 lines preserved for error body when present). */
+function isExitTrailerLine(line: string): boolean {
+  const trimmed = line.trim();
+  return (
+    /^\[[\w\s-]+\s+exited\s+.*in\s+[\d.]+s\]$/i.test(trimmed) ||
+    /^\[[\w\s-]+\s+exited\s+(?:with\s+code\s+\d+|without\s+status)\]$/i.test(trimmed)
+  );
+}
+
+function tryFormatJson(text: string, theme: Theme): string[] | undefined {
+  const trimmed = text.trim();
+  if (!(
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  )) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    const formatted = JSON.stringify(parsed, null, 2);
+    return safeHighlightCode(formatted, "json", theme);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Extract preview lines up to limit, stripping duplicate runtime exit trailers. */
 function extractPreviewLines(
   _toolName: string,
   result: ToolResultLike | undefined,
   _isError: boolean,
   maxLines: number,
+  theme?: Theme,
 ): string[] {
   const text = firstText(result);
   if (!text) return [];
-  const lines = nonEmptyLines(text);
+
+  if (theme) {
+    const jsonLines = tryFormatJson(text, theme);
+    if (jsonLines) {
+      return jsonLines.slice(0, maxLines);
+    }
+  }
+
+  const rawLines = nonEmptyLines(text);
+  const lines = rawLines.filter((l) => !isExitTrailerLine(l));
   return lines.slice(0, maxLines);
 }
 
@@ -326,9 +562,9 @@ function buildFooterLine(
     }
   }
 
-  if (toolName === "bash") {
-    // bash results always benefit from exit code footer
-    return formatFooterBadge(theme, "bash", undefined, isError ? 1 : 0);
+  if (toolName === "bash" || toolName === "powershell" || toolName === "sh") {
+    // shell results always benefit from exit code footer
+    return formatFooterBadge(theme, toolName, undefined, isError ? 1 : 0);
   }
 
   return undefined;
