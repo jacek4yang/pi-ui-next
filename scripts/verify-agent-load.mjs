@@ -9,7 +9,14 @@ const loader = new DefaultResourceLoader({ cwd: process.cwd(), agentDir: getAgen
 await loader.reload();
 const { errors, warnings, extensions } = loader.extensionsResult;
 console.log("agent dir:", getAgentDir());
-console.log("extensions loaded:", extensions.length, "| errors:", errors.length, "| warnings:", warnings?.length ?? 0);
+console.log(
+  "extensions loaded:",
+  extensions.length,
+  "| errors:",
+  errors.length,
+  "| warnings:",
+  warnings?.length ?? 0,
+);
 for (const e of errors) console.log("ERROR:", e.path, e.error);
 for (const w of warnings ?? []) console.log("WARN:", w.path, w.warning);
 assert.equal(errors.length, 0, "extension load errors in real agent config");
