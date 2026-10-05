@@ -2,7 +2,7 @@
 // fixed (U3 in docs/INVARIANTS.md): a theme or icon pack may never swap the
 // meaning of running/success/failure/cancelled/warning.
 
-export type IconMode = "unicode" | "ascii";
+export type IconMode = "unicode" | "ascii" | "nerd";
 
 export interface IconSet {
   running: string;
@@ -41,5 +41,17 @@ export const ICONS: Record<IconMode, IconSet> = {
     vertical: "|",
     expanded: "v",
     collapsed: ">",
+  },
+  nerd: {
+    running: "󰪥",
+    success: "󰄳",
+    failure: "󰅚",
+    cancelled: "󰅙",
+    warning: "󰀦",
+    branch: "├─",
+    lastBranch: "└─",
+    vertical: "│",
+    expanded: "󰅀",
+    collapsed: "󰅂",
   },
 };
