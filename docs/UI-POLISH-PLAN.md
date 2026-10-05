@@ -61,16 +61,31 @@
 - **renderCall**:
   - 工具名: `toolTitle`
   - 参数摘要: `muted`
+  - 代码/命令执行工具 (`python`, `node`, `code`, `bash`, `powershell`, `code_buffer`):
+    - 解构 `source`, `command`, `cmd`, `code`, `patch`
+    - 单行命令: `$ <highlighted-command>` / `PS> <highlighted-command>`
+    - 多行代码: 首行工具标题/超时信息，后续行 2 空格缩进并应用语法高亮 (`highlightCode`)
+    - 折叠态默认最多 8 行，带 `... (N more lines, click to expand)`
+    - 展开态完整展示语法高亮代码块
   - 路径参数过长时调用 `truncateMiddlePath`
   - 命令参数折叠到 48 列以内
-  - 文字小样: `bash npm test -- --coverage` -> `bash` (toolTitle) + ` ` + `npm test -- --coverage` (muted)
+  - 文字小样:
+    ```python
+    python
+      print("Hello from Python!")
+      import sys
+      print(sys.version)
+    ```
 - **renderResult**:
   - 状态图标: 成功 `success`、失败 `error`、警告 `warning`、流式运行中 `accent`
-  - 头部元数据行: `✓ toolName · metadata`
-  - 输出预览:
+  - 头部元数据行: `✓ toolName · metadata` (如 `✓ python · 110ms` 或 `✓ code · revision 7 · 8 calls · 3.4s`)
+  - 输出预览与语法高亮:
+    - 自动识别 JSON 输出并应用 `json` 语法高亮
+    - 针对 Python / Node 堆栈跟踪 (Traceback): 错误名加粗高亮、文件路径 `accent` 高亮、行号 `warning` 着色、帧栈 `muted` 弱化
+    - 自动过滤底层运行时末尾嵌入的冗余退出信息 (如 `[python exited with code 0 in 0.1s]`)，防止与页脚徽章重复
     - 常规内联: 最多 6 行 (非 expanded)
     - 展开 (expanded): 最多 16 行
-    - 每行用 `toolOutput` 色，并通过 `truncateToWidth` 适配终端宽度
+    - 每行通过 `truncateToWidth` 适配终端宽度
   - 针对 diff 输出 (edit 工具或含 patch 文本): 逐行检视 `+` / `-`，应用 `toolDiffAdded` / `toolDiffRemoved`
   - 针对错误输出: 首行 `error` 色，保留至少 4 行错误信息正文
   - 针对 partial / isPartial: 图标为 running，高亮 `accent`
