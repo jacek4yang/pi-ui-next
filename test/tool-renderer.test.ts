@@ -13,11 +13,10 @@ import {
   EXPANDED_PREVIEW_LINES,
   INLINE_PREVIEW_LINES,
   isCodeExecutionTool,
-  isEnvBannerLine,
   renderCallBlock,
   renderCallLine,
   renderResultLines,
-  stripLeadingEnvBanners,
+  splitOutputLines,
   type ToolRenderContextLike,
 } from "../src/render/tool-renderer.ts";
 import type { PinxExecDetails } from "../src/render/result-summary.ts";
@@ -508,79 +507,60 @@ test("createToolRendererResolver intercepts python tool calls and results even w
   assert.ok(resultText.includes("— python"), resultText);
 });
 
-test("isEnvBannerLine recognizes Python/Node/OS environment headers", () => {
-  assert.equal(
-    isEnvBannerLine(
-      "Python 3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
-    ),
-    true,
-  );
-  assert.equal(isEnvBannerLine("Python 版本: 3.14.7"), true);
-  assert.equal(isEnvBannerLine("Platform: Windows-11-10.0.26200-SP0"), true);
-  assert.equal(isEnvBannerLine("操作系统: Windows 11 AMD64"), true);
-  assert.equal(isEnvBannerLine("解释器路径: D:\\python.exe"), true);
-  assert.equal(isEnvBannerLine("工作目录: C:\\Users\\20220"), true);
-  assert.equal(isEnvBannerLine("Node.js v22.19.0"), true);
-  assert.equal(isEnvBannerLine("Hello from Python! 你好！"), false);
-  assert.equal(isEnvBannerLine("5050"), false);
-});
+test("splitOutputLines normalizes CRLF and trims trailing exit trailers without adding ghost blank lines", () => {
+  const rawOutput =
+    "Python 3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]\r\nPlatform: Windows-11-10.0.26200-SP0\r\nHello from Python! 你好！\r\n5050\r\n\n[python exited with code 0 in 0.1s]";
+  const lines = splitOutputLines(rawOutput);
 
-test("stripLeadingEnvBanners strips boilerplate banners when real output follows (pure result)", () => {
-  const lines = [
+  // Exactly 4 compact lines, with NO trailing \r and NO ghost blank lines
+  assert.deepEqual(lines, [
     "Python 3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
     "Platform: Windows-11-10.0.26200-SP0",
     "Hello from Python! 你好！",
     "5050",
-  ];
-  const cleaned = stripLeadingEnvBanners(lines);
-  assert.deepEqual(cleaned, ["Hello from Python! 你好！", "5050"]);
+  ]);
+  assert.ok(!lines.some((l) => l.includes("\r")));
 });
 
-test("stripLeadingEnvBanners strips multi-line Chinese environment block and separator", () => {
-  const lines = [
-    "Python 版本: 3.14.7",
-    "解释器路径: D:\\python.exe",
-    "操作系统: Windows 11 AMD64",
-    "工作目录: C:\\Users\\20220",
-    "------------------------------",
-    "1-10 的平方: [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]",
-    "平方和: 385",
-  ];
-  const cleaned = stripLeadingEnvBanners(lines);
-  assert.deepEqual(cleaned, ["1-10 的平方: [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]", "平方和: 385"]);
+test("splitOutputLines preserves intentional empty print line", () => {
+  const rawOutput = "line1\r\n\r\nline2\r\n";
+  const lines = splitOutputLines(rawOutput);
+  assert.deepEqual(lines, ["line1", "", "line2"]);
 });
 
-test("stripLeadingEnvBanners preserves banner when it is the ONLY output (e.g. version check)", () => {
-  const lines = ["Python 3.14.7"];
-  const cleaned = stripLeadingEnvBanners(lines);
-  assert.deepEqual(cleaned, ["Python 3.14.7"]);
+test("splitOutputLines collapses multiple consecutive empty lines to at most one", () => {
+  const rawOutput = "\r\n\r\nline1\r\n\r\n\r\n\r\nline2\r\n\r\n";
+  const lines = splitOutputLines(rawOutput);
+  assert.deepEqual(lines, ["line1", "", "line2"]);
 });
 
-test("renderResultLines strips leading environment banner from preview and outcome summary", () => {
+test("renderResultLines outputs compact adjacent lines without phantom spacing on Windows CRLF", () => {
   const theme = createMockTheme();
-  const rawOutput = [
-    "Python 3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
-    "Platform: Windows-11-10.0.26200-SP0",
-    "Hello from Python! 你好！",
-    "5050",
-    "[python exited with code 0 in 0.1s]",
-  ].join("\n");
+  const rawOutput =
+    "Python 3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]\r\nPlatform: Windows-11-10.0.26200-SP0\r\nHello from Python! 你好！\r\n5050\r\n\n[python exited with code 0 in 0.1s]";
 
   const lines = renderResultLines(
     "python",
-    textResult(rawOutput),
+    textResult(rawOutput, {
+      details: { v: 1, shape: "pinx.exec", runtime: "python", durationMs: 118, exitCode: 0 },
+    }),
     { expanded: false, isPartial: false },
     theme,
   );
 
-  // Header should summarize with real output, not environment banner
-  assert.ok(lines[0]!.includes("Hello from Python!"), lines[0]);
-  assert.ok(!lines[0]!.includes("Platform:"), lines[0]);
+  // Header + 4 preview lines + 1 footer = exactly 6 lines
+  assert.equal(lines.length, 6);
+  assert.ok(lines[0]!.includes("✓"), lines[0]);
+  assert.ok(lines[0]!.includes("python"), lines[0]);
+  assert.ok(lines[0]!.includes("118ms"), lines[0]);
+  assert.ok(lines[1]!.includes("Python 3.14.7"), lines[1]);
+  assert.ok(lines[2]!.includes("Platform: Windows"), lines[2]);
+  assert.ok(lines[3]!.includes("Hello from Python! 你好！"), lines[3]);
+  assert.ok(lines[4]!.includes("5050"), lines[4]);
+  assert.ok(lines[5]!.includes("— python · 118ms · exit 0"), lines[5]);
 
-  // Preview should contain pure execution result
-  const previewText = lines.slice(1).join("\n");
-  assert.ok(previewText.includes("Hello from Python! 你好！"), previewText);
-  assert.ok(previewText.includes("5050"), previewText);
-  assert.ok(!previewText.includes("Platform: Windows"), previewText);
-  assert.ok(!previewText.includes("Python 3.14.7"), previewText);
+  // Ensure NO lines contain trailing \r which would cause pi-tui to create phantom empty lines
+  for (const line of lines) {
+    assert.ok(!line.includes("\r"), `Line should not contain \\r: ${JSON.stringify(line)}`);
+  }
 });

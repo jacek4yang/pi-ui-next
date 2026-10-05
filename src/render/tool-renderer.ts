@@ -306,8 +306,12 @@ export function renderResultLines(
   const maxPreview = options.expanded ? EXPANDED_PREVIEW_LINES : INLINE_PREVIEW_LINES;
   const preview = extractPreviewLines(toolName, result, isError, maxPreview, theme);
   for (const pLine of preview) {
-    const formatted = formatPreviewLine(pLine, isError, theme);
-    lines.push(truncateToWidth(`  ${formatted}`, width));
+    if (pLine.length === 0) {
+      lines.push("");
+    } else {
+      const formatted = formatPreviewLine(pLine, isError, theme);
+      lines.push(truncateToWidth(`  ${formatted}`, width));
+    }
   }
 
   // 3. Footer Line (0 empty lines between preview and footer)
@@ -368,9 +372,7 @@ function formatOutcomeSummary(
       : undefined;
 
   const rawText = firstText(result);
-  const textLines = stripLeadingEnvBanners(
-    nonEmptyLines(rawText).filter((l) => !isExitTrailerLine(l)),
-  );
+  const textLines = splitOutputLines(rawText).filter((l) => l.trim().length > 0);
 
   if (isError) {
     const firstErr = textLines[0];
@@ -511,34 +513,41 @@ function isExitTrailerLine(line: string): boolean {
   );
 }
 
-export function isEnvBannerLine(line: string): boolean {
-  const trimmed = line.trim();
-  if (/^Python(?:\s+版本[:：]|\s*\d+\.\d+)/i.test(trimmed)) return true;
-  if (/^(?:Platform|操作系统|系统)[:：]/i.test(trimmed)) return true;
-  if (/^(?:解释器路径|Python\s*路径|Executable|Interpreter)[:：]/i.test(trimmed)) return true;
-  if (/^(?:工作目录|Working\s*(?:directory|dir))[:：]/i.test(trimmed)) return true;
-  if (/^Node(?:\.js)?\s+v\d+\.\d+/i.test(trimmed)) return true;
-  return false;
-}
+/**
+ * Parse output text into compact preview lines.
+ *
+ * Normalizes Windows CRLF/CR to LF so that trailing \r never splits ANSI spans
+ * into ghost blank lines in pi-tui. Trims leading/trailing blank lines, and
+ * collapses consecutive blank lines to at most one (preserving intentional blank lines
+ * while preventing sparse vertical waste). Strips runtime exit trailers.
+ */
+export function splitOutputLines(text: string): string[] {
+  if (!text) return [];
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const raw = normalized.split("\n");
 
-export function stripLeadingEnvBanners(lines: string[]): string[] {
-  let bannerCount = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (isEnvBannerLine(line)) {
-      bannerCount++;
-    } else if (bannerCount > 0 && /^[-=_~]{3,}$/.test(line.trim())) {
-      bannerCount++;
-      break;
+  const lines: string[] = [];
+  let prevEmpty = false;
+
+  for (const line of raw) {
+    if (isExitTrailerLine(line)) continue;
+    const isCurEmpty = line.trim().length === 0;
+    if (isCurEmpty) {
+      if (lines.length > 0 && !prevEmpty) {
+        lines.push("");
+        prevEmpty = true;
+      }
     } else {
-      break;
+      lines.push(line);
+      prevEmpty = false;
     }
   }
 
-  // Only strip if there are remaining non-banner lines (keeps pure version checks intact)
-  if (bannerCount > 0 && bannerCount < lines.length) {
-    return lines.slice(bannerCount);
+  // Trim trailing empty line if any
+  while (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
   }
+
   return lines;
 }
 
@@ -559,7 +568,7 @@ function tryFormatJson(text: string, theme: Theme): string[] | undefined {
   }
 }
 
-/** Extract preview lines up to limit, stripping duplicate runtime exit trailers and leading environment banners. */
+/** Extract preview lines up to limit, normalizing CRLF and stripping runtime exit trailers. */
 function extractPreviewLines(
   _toolName: string,
   result: ToolResultLike | undefined,
@@ -577,9 +586,7 @@ function extractPreviewLines(
     }
   }
 
-  const rawLines = nonEmptyLines(text);
-  const withoutTrailers = rawLines.filter((l) => !isExitTrailerLine(l));
-  const lines = stripLeadingEnvBanners(withoutTrailers);
+  const lines = splitOutputLines(text);
   return lines.slice(0, maxLines);
 }
 
@@ -625,10 +632,6 @@ function firstText(result: ToolResultLike | undefined): string {
     }
   }
   return "";
-}
-
-function nonEmptyLines(text: string): string[] {
-  return text.split("\n").filter((l) => l.trim().length > 0);
 }
 
 function firstString(args: Record<string, unknown>, keys: string[]): string | undefined {
