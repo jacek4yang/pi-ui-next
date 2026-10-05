@@ -7,7 +7,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ActivityTimeline } from "../src/timeline/timeline.ts";
 import { buildWidgetLines } from "../src/render/widget.ts";
-import type { LatestContextStatus } from "../src/render/widget.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
 const stubTheme = {
