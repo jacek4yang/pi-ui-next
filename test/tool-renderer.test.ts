@@ -9,7 +9,6 @@ import type {
   ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
 import {
-  CALL_PREVIEW_LINES,
   createToolRendererResolver,
   EXPANDED_PREVIEW_LINES,
   INLINE_PREVIEW_LINES,
@@ -338,25 +337,29 @@ test("isCodeExecutionTool identifies code/shell tools and args with source/comma
   assert.ok(!isCodeExecutionTool("grep", { pattern: "bar" }));
 });
 
-test("renderCallBlock formats python call without raw JSON escaping", () => {
+test("renderCallBlock collapses multi-line code to single line badge by default and expands on demand", () => {
   const theme = createMockTheme();
   const args = {
     source: 'print("Hello from Python!")\nimport sys\nprint(sys.version)',
   };
-  const lines = renderCallBlock("python", args, theme);
+  // 1. Collapsed by default: single clean badge `python (3 lines)`
+  const collapsed = renderCallBlock("python", args, theme);
+  assert.equal(collapsed.length, 1);
+  assert.ok(
+    collapsed[0]!.includes("token:toolTitle") && collapsed[0]!.includes("python"),
+    collapsed[0],
+  );
+  assert.ok(collapsed[0]!.includes("(3 lines)"), collapsed[0]);
+  assert.ok(!collapsed[0]!.includes('source="'), collapsed[0]);
+  assert.ok(!collapsed[0]!.includes("\\n"), collapsed[0]);
 
-  // Line 0: python tool title
-  assert.ok(lines[0]!.includes("token:toolTitle") && lines[0]!.includes("python"), lines[0]);
-  // Indented code lines
-  assert.ok(lines[1]!.includes('print("Hello from Python!")'), lines[1]);
-  assert.ok(lines[2]!.includes("import sys"), lines[2]);
-  assert.ok(lines[3]!.includes("print(sys.version)"), lines[3]);
-
-  // Must NOT contain raw JSON escaping like source="..." or \n
-  for (const line of lines) {
-    assert.ok(!line.includes('source="'), `leaked source=: ${line}`);
-    assert.ok(!line.includes("\\n"), `leaked literal \\n: ${line}`);
-  }
+  // 2. Expanded on demand: full syntax-highlighted code block
+  const expanded = renderCallBlock("python", args, theme, { expanded: true });
+  assert.ok(expanded.length > 1);
+  assert.ok(expanded[0]!.includes("python"), expanded[0]);
+  assert.ok(expanded[1]!.includes('print("Hello from Python!")'), expanded[1]);
+  assert.ok(expanded[2]!.includes("import sys"), expanded[2]);
+  assert.ok(expanded[3]!.includes("print(sys.version)"), expanded[3]);
 });
 
 test("renderCallBlock formats single-line and multi-line bash calls", () => {
@@ -367,27 +370,29 @@ test("renderCallBlock formats single-line and multi-line bash calls", () => {
   assert.equal(single.length, 1);
   assert.ok(single[0]!.includes("$") && single[0]!.includes("npm test"), single[0]);
 
-  // Multi-line bash
-  const multi = renderCallBlock("bash", { command: "echo step 1\necho step 2" }, theme);
-  assert.ok(multi[0]!.includes("bash"), multi[0]);
-  assert.ok(multi[1]!.includes("echo step 1"), multi[1]);
-  assert.ok(multi[2]!.includes("echo step 2"), multi[2]);
-});
-
-test("renderCallBlock bounds long multi-line code calls in collapsed mode", () => {
-  const theme = createMockTheme();
-  const source = Array.from({ length: 14 }, (_, i) => `line_${i + 1} = ${i + 1}`).join("\n");
-
-  const collapsed = renderCallBlock("python", { source }, theme, { expanded: false });
-  // 1 header + 8 code lines + 1 continuation hint = 10 lines
-  assert.equal(collapsed.length, 1 + CALL_PREVIEW_LINES + 1);
+  // Multi-line bash collapsed
+  const multiCollapsed = renderCallBlock("bash", { command: "echo step 1\necho step 2" }, theme);
+  assert.equal(multiCollapsed.length, 1);
   assert.ok(
-    collapsed[collapsed.length - 1]!.includes("more lines"),
-    collapsed[collapsed.length - 1],
+    multiCollapsed[0]!.includes("bash") && multiCollapsed[0]!.includes("(2 lines)"),
+    multiCollapsed[0],
   );
 
-  const expanded = renderCallBlock("python", { source }, theme, { expanded: true });
-  assert.equal(expanded.length, 1 + 14);
+  // Multi-line bash expanded
+  const multiExpanded = renderCallBlock("bash", { command: "echo step 1\necho step 2" }, theme, {
+    expanded: true,
+  });
+  assert.ok(multiExpanded[0]!.includes("bash"), multiExpanded[0]);
+  assert.ok(multiExpanded[1]!.includes("echo step 1"), multiExpanded[1]);
+  assert.ok(multiExpanded[2]!.includes("echo step 2"), multiExpanded[2]);
+});
+
+test("renderCallBlock single-line python renders inline", () => {
+  const theme = createMockTheme();
+  const single = renderCallBlock("python", { source: 'print("hello")' }, theme);
+  assert.equal(single.length, 1);
+  assert.ok(single[0]!.includes("python"), single[0]);
+  assert.ok(single[0]!.includes('print("hello")'), single[0]);
 });
 
 test("renderResultLines strips embedded runtime exit trailer preventing duplicate footers", () => {

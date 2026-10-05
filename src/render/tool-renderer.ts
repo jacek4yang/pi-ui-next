@@ -146,7 +146,7 @@ export function formatCodeCallLines(
     : "";
   const partialStr = isPartial ? ` ${renderMuted(theme, "running…")}` : "";
 
-  // Single-line shell command ($ npm test)
+  // 1. Single-line shell command ($ npm test)
   if (
     (toolName === "bash" || toolName === "powershell" || toolName === "sh") &&
     rawLines.length === 1
@@ -156,7 +156,27 @@ export function formatCodeCallLines(
     return [truncateToWidth(`${prompt} ${highlightedCmd}${timeoutStr}${partialStr}`, width)];
   }
 
-  // Header line
+  // 2. Single-line code execution (e.g. python print("hi"))
+  if (rawLines.length === 1 && toolName !== "code_buffer") {
+    const title = renderToolTitle(theme, toolName);
+    const highlightedCmd = safeHighlightCode(normalizedCode, lang, theme)[0] ?? normalizedCode;
+    return [truncateToWidth(`${title} ${highlightedCmd}${timeoutStr}${partialStr}`, width)];
+  }
+
+  // 3. Multi-line code execution: collapsed (!isExpanded) renders as single compact badge
+  if (!isExpanded) {
+    let collapsedLine = renderToolTitle(theme, toolName);
+    if (toolName === "code_buffer" && rec) {
+      const action = firstString(rec, ["action"]) ?? "run";
+      const name = firstString(rec, ["name"]);
+      collapsedLine += ` ${renderMuted(theme, [action, name].filter(Boolean).join(" "))}`;
+    }
+    const lineCountBadge = renderMuted(theme, `(${rawLines.length} lines)`);
+    collapsedLine += ` ${lineCountBadge}${timeoutStr}${partialStr}`;
+    return [truncateToWidth(collapsedLine, width)];
+  }
+
+  // 4. Multi-line code execution: expanded shows full syntax-highlighted code block
   let header = renderToolTitle(theme, toolName);
   if (toolName === "code_buffer" && rec) {
     const action = firstString(rec, ["action"]) ?? "run";
@@ -167,21 +187,9 @@ export function formatCodeCallLines(
 
   const lines: string[] = [truncateToWidth(header, width)];
   const highlightedLines = safeHighlightCode(normalizedCode, lang, theme);
-  const maxLines = isExpanded ? highlightedLines.length : CALL_PREVIEW_LINES;
-  const displayLines = highlightedLines.slice(0, maxLines);
 
-  for (const hLine of displayLines) {
+  for (const hLine of highlightedLines) {
     lines.push(truncateToWidth(`  ${hLine}`, width));
-  }
-
-  if (highlightedLines.length > maxLines) {
-    const remaining = highlightedLines.length - maxLines;
-    lines.push(
-      truncateToWidth(
-        `  ${renderMuted(theme, `... (${remaining} more lines, click to expand)`)}`,
-        width,
-      ),
-    );
   }
 
   return lines;
